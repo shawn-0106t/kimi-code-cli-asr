@@ -1,0 +1,38 @@
+# 缓存与中间产物
+cache/
+*.log
+
+# 原始录音与测试音频（体积大、含隐私，不入库）
+testdata/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.mp4
+*.mov
+
+# 转写产物（如确需入库，删除下面两行的注释）
+*.transcript.md
+*.transcript.json
+
+# 生成的音视频输出
+speech_*.mp3
+generated_*.png
+generated_*.mp4
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 凭据与本地配置（永不入库）
+.env
+*.key
+credentials*
+config/providers.toml
+
+# 工具与系统
+.vscode/
+.DS_Store
+Thumbs.db

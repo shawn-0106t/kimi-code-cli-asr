@@ -150,11 +150,13 @@ scripts/meeting_asr.py                    ← 唯一实现体（也独立可用�
   └─ 6. 输出：<同名>.transcript.md + .transcript.json + 用量报告
 ```
 
-目录约定（当前项目 `asr/`）：
+目录约定（仓库 `kimi-code-cli-asr` 根目录）：
 
 ```
-asr/
+kimi-code-cli-asr/
+├── README.md                     ← 仓库入口与状态
 ├── asr-integration-prd-spec.md   ← 本文档
+├── .gitignore                    ← 录音/缓存/转写稿/凭据不入库
 ├── scripts/
 │   └── meeting_asr.py            ← 实现时创建
 ├── config/

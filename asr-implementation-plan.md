@@ -14,7 +14,7 @@
 | 0.1 | 用户配置环境变量 `QWEN_TOKEN_PLAN_KEY=sk-sp-...`（Windows 用户级环境变量，或当前 shell `export`；**不写入任何文件/仓库**） | `echo ${QWEN_TOKEN_PLAN_KEY:0:6}` 输出 `sk-sp-` |
 | 0.2 | 确认 ffmpeg 可用；缺失则安装（winget：`winget install Gyan.FFmpeg`） | `ffmpeg -version` 有输出 |
 | 0.3 | 确认 Python 3.10+ 与 `requests` 可用 | `PYTHONUTF8=1 python -c "import requests; print(requests.__version__)"` |
-| 0.4 | 准备一段 30 秒内的测试音频（中文语音，wav/mp3 均可），放入 `asr/testdata/` | 文件存在且可播放 |
+| 0.4 | 准备一段 30 秒内的测试音频（中文语音，wav/mp3 均可），放入 `testdata/`（仓库根下，已被 .gitignore 排除） | 文件存在且可播放 |
 | 0.5 | 创建目录骨架：`scripts/`、`config/`、`cache/`、`testdata/`；`.gitignore` 加入 `cache/`、`testdata/` | 目录就位 |
 
 ---
@@ -108,6 +108,6 @@
 
 ## 会话衔接说明（给下一个执行会话）
 
-1. 先读 `asr/asr-integration-prd-spec.md`（设计依据）+ 本文档
+1. 先读仓库根的 `asr-integration-prd-spec.md`（设计依据）+ `asr-implementation-plan.md`（本文档）
 2. 从 0.1 开始逐步执行；M1 未完成前不要写 M2 代码
 3. 每里程碑结束更新本文档对应 checkbox 与 SPEC 开放问题

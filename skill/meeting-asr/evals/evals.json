@@ -1,0 +1,44 @@
+{
+  "skill_name": "meeting-asr",
+  "evals": [
+    {
+      "id": 1,
+      "name": "direct-transcribe",
+      "prompt": "把 testdata/Y26_KFC_H1_review_record_audio.m4a 这段会议录音转成文字稿",
+      "expected_output": "调用 scripts/meeting_asr.py 完成转写，产出 .transcript.md（含 [mm:ss] 时间标记）与 .transcript.json，并向用户汇报输出路径与用量",
+      "files": [],
+      "assertions": [
+        "调用了 scripts/meeting_asr.py 完成转写（而非自造方案）",
+        "产出 .transcript.md 且包含 [mm:ss] 形式的时间标记",
+        "向用户汇报了输出文件路径与用量信息",
+        "全过程未打印 API Key 或 Base64 内容"
+      ]
+    },
+    {
+      "id": 2,
+      "name": "vague-path-transcribe",
+      "prompt": "testdata 目录里有个 m4a 的客户会录音，帮我出个逐字稿",
+      "expected_output": "能自行定位 testdata 下的 m4a 文件，调用 scripts/meeting_asr.py 完成转写并汇报结果",
+      "files": [],
+      "assertions": [
+        "正确定位到 testdata 下的 m4a 音频文件",
+        "调用了 scripts/meeting_asr.py 完成转写（而非自造方案）",
+        "产出 .transcript.md 且包含 [mm:ss] 形式的时间标记",
+        "全过程未打印 API Key 或 Base64 内容"
+      ]
+    },
+    {
+      "id": 3,
+      "name": "transcribe-plus-minutes",
+      "prompt": "把 testdata 里的会议录音转写一下，然后基于转写稿给我出一份会议纪要",
+      "expected_output": "先调用 scripts/meeting_asr.py 转写，再读取转写稿直接产出会议纪要（不重复调用 ASR），纪要内容与转写稿一致",
+      "files": [],
+      "assertions": [
+        "调用了 scripts/meeting_asr.py 完成转写",
+        "基于转写稿产出会议纪要，且未重复调用 ASR 接口",
+        "纪要内容与转写稿一致，不臆造转写稿之外的结论",
+        "纪要包含结论与行动项要素"
+      ]
+    }
+  ]
+}

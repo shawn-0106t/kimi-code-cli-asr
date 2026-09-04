@@ -1,41 +1,55 @@
 # kimi-code-cli-asr
 
-把千问AI平台 Token Plan 内的 ASR 模型（`qwen-audio-3.0-asr-flash`）接入 Kimi Code CLI，用于会议录音转文字：一句话触发 → 本地录音自动切片转写 → 文字稿落盘 → 同会话继续出会议纪要。
+[中文说明](README_CN.md)
 
-## 状态
+Transcribe local meeting recordings to text inside Kimi Code CLI, powered by the Qwen AI platform Token Plan ASR model (`qwen-audio-3.0-asr-flash`) — one sentence triggers the whole pipeline: auto-slicing → concurrent transcription → timeline-merged transcript → meeting minutes in the same session. All calls stay within the Token Plan bundle; no extra spend.
 
-**设计阶段 —— 当前无可执行代码。**
+## Features
 
-- [x] 官方文档实测调研（4 页，含端点/模型限制确认）
-- [x] PRD + SPEC 定稿（v0.4）
-- [x] 执行计划编写
-- [ ] M1 spike：token-plan 端点 5 项假设待实测（**动工第一步**）
-- [ ] M2 转写脚本 / M3 skill 封装
+- **Long-audio pipeline**: recordings of 30–120 min are auto-sliced (default 240s/slice, under the model's 5-min limit), transcribed with 3-way concurrency, and merged back on the timeline
+- **Resume without re-billing**: slice-level cache (audio SHA1 + slice index + context hash); interrupted runs only redo failed slices
+- **Hotword context enhancement**: brand/platform/client names from `skill/meeting-asr/assets/hotwords.txt` are injected as conversation context to improve proper-noun recognition
+- **Cost transparency**: every run prints audio duration, new requests, cache hits, and billed seconds (`usage.duration`)
+- **Privacy-safe**: Base64 direct upload to the token-plan endpoint only, no third-party hosting; API key from env var or Windows user registry, never written to disk; first run requires explicit `--consent`
+- **Kimi Code skill**: a self-contained, redistributable skill package (`meeting-asr.skill` / `.zip`) for natural-language triggering
 
-## 文档
+## Quickstart
 
-| 文件 | 作用 |
+Prerequisites: Python 3.10+, ffmpeg (`winget install Gyan.FFmpeg` on Windows), a Token Plan key (`sk-sp-...`).
+
+```bash
+pip install -r requirements.txt
+setx QWEN_TOKEN_PLAN_KEY "sk-sp-..."   # Windows persistent; or export in your shell
+
+# transcribe (first run asks for cloud-processing consent)
+PYTHONUTF8=1 python skill/meeting-asr/scripts/meeting_asr.py "path/to/meeting.m4a" --consent
+```
+
+Outputs next to the audio: `<name>.transcript.md` (with `[mm:ss]` markers) and `<name>.transcript.json` (structured slices + usage). Re-running the same command resumes from cache at zero cost.
+
+Interrupted? Just re-run — completed slices are served from cache. A per-file process lock prevents concurrent double billing.
+
+## Skill form (recommended for Kimi Code users)
+
+The skill ships in this repo at `skill/meeting-asr/` (self-contained: `SKILL.md` + `scripts/` + `assets/` + `references/`). Install by copying it to `~/.kimi-code/skills/`:
+
+```bash
+cp -r skill/meeting-asr ~/.kimi-code/skills/
+```
+
+Once installed, just say "把这段会议录音转成文字" — no commands needed. Feishu/Lark Minutes recordings are out of scope (use the lark-meeting skill instead).
+
+## Docs
+
+| File | Contents |
 |---|---|
-| [`asr-integration-prd-spec.md`](asr-integration-prd-spec.md) | PRD + SPEC 混合文档：需求、选型、架构、接口、验收标准 |
-| [`asr-implementation-plan.md`](asr-implementation-plan.md) | 执行计划：里程碑 0.1~M4 的逐步操作与出口标准 |
+| [`asr-integration-prd-spec.md`](asr-integration-prd-spec.md) / [`_EN`](asr-integration-prd-spec_EN.md) | PRD + SPEC + implementation log (milestones, verification records) |
+| [`AGENTS.md`](AGENTS.md) | Bilingual guidance for AI agents working in this repo |
+| [`README_CN.md`](README_CN.md) | 中文说明 |
 
-阅读顺序：先 SPEC 后 PLAN。要接手实现，从 PLAN 的「0. 开工前准备」开始。
+## Not committed
 
-## 关键约束速查
-
-这几条是实测官方文档得出的，直接决定了架构设计：
-
-- 套餐内唯一 ASR 模型：`qwen-audio-3.0-asr-flash`，单请求音频上限 **5 分钟** → 长录音必须切片
-- 只能走 DashScope 风格同步端点 `services/aigc/multimodal-generation/generation`；**OpenAI 兼容端点不支持此模型**
-- 输入支持 Base64 Data URL（编码后 ≤10MB）与 URL；官方另有临时 OSS 上传通道作兜底
-- **不支持说话人分离**（该能力属于套餐外的 filetrans 模型）
-- 支持**上下文增强**：热词/领域文本以成对 messages 传入，可提升品牌名、平台名等专名识别率
-
-## 不入库的内容
-
-`.gitignore` 默认排除原始录音（`testdata/`、`*.wav/mp3/m4a`）、切片缓存（`cache/`）、转写稿（`*.transcript.*`）与凭据文件。想备份文字稿，删掉 `.gitignore` 中对应两行的注释即可。
-
-API Key 通过环境变量 `QWEN_TOKEN_PLAN_KEY` 注入，不写入任何文件。
+`.gitignore` excludes raw audio (`testdata/`, `*.wav/mp3/m4a/...`), slice cache (`cache/`), transcripts (`*.transcript.*`), and credentials.
 
 ## License
 

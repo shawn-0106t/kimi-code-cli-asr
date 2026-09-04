@@ -1,12 +1,13 @@
-# Kimi Code CLI 接入千问AI平台 Token Plan（ASR）—— PRD / SPEC
+# Kimi Code CLI 接入千问AI平台 Token Plan（ASR）—— PRD / SPEC / 实施记录
 
-> 版本：v0.4  日期：2026-09
+> 版本：v1.0  日期：2026-09-05
 > 变更记录：
 > - v0.2：确认 token plan 为千问AI平台 Token Plan（DashScope 兼容，`sk-sp-` Key），选型 filetrans
 > - v0.3：WebBridge 实探 2 页，确认套餐仅含 `qwen-audio-3.0-asr-flash`（同步、≤5 分钟），重写选型与架构
 > - v0.4：WebBridge 增探 2 页（OpenAI 兼容接口、临时 URL 上传），明确接口边界、新增上传兜底方案、修订切片码率策略
-> 定位：PRD（为什么做、做什么）+ SPEC（怎么做）混合文档，供评审后直接进入实现
-> 范围声明：本文档只到设计为止，不含实现代码
+> - v0.5：新增 2.9 技术栈评审结论——评估确认维持现有技术栈（Python + requests + ffmpeg CLI + Skill 形态），dashscope SDK 路线备查不采用
+> - v1.0：M1~M3 实施完成；原 `asr-implementation-plan.md` 撤销，其里程碑结论与质量记录并入 Part 3
+> 定位：PRD（为什么做、做什么）+ SPEC（怎么做）+ 实施记录（做得怎么样）三合一文档
 
 ---
 
@@ -54,7 +55,7 @@
 | 凭证接口限流 100 QPS（账号+模型维度） | 本场景（每文件一次）无影响 |
 | 示例 base URL 均为 `dashscope.aliyuncs.com` | token-plan 端点是否同样支持，列入 M1 spike |
 
-> M1 未验证项汇总：token-plan 端点对本模型同步调用的支持、Base64 输入、响应字段结构、usage 字段、uploads getPolicy 在 token-plan 端点的可用性。
+> M1 已于 2026-09-04 实测完成，五项结论见 2.8-1：端点可通、Base64 可用、usage 为 `duration` 秒数、词级时间戳可用、getPolicy 在 token-plan 端点不可用（oss 兜底放弃）。
 
 ---
 
@@ -112,9 +113,9 @@
 | 鉴权 | `Authorization: Bearer $QWEN_TOKEN_PLAN_KEY`（`sk-sp-` 前缀，环境变量注入，不落盘） |
 | 调用方式 | 同步，逐切片调用；header 加 `X-DashScope-SSE: disable` |
 | 输入方式 A（默认） | Base64 Data URL：`data:audio/mpeg;base64,...` 放入 `input_audio.data` |
-| 输入方式 B（兜底） | 临时 URL 上传：`GET <base>/api/v1/uploads?action=getPolicy&model=qwen-audio-3.0-asr-flash` → POST 至 `upload_host` → 得 `oss://` URL（48h 有效）；调用时加 header `X-DashScope-OssResourceResolve: enable` |
+| 输入方式 B（兜底） | 临时 URL 上传：`GET <base>/api/v1/uploads?action=getPolicy&model=qwen-audio-3.0-asr-flash` → POST 至 `upload_host` → 得 `oss://` URL（48h 有效）；调用时加 header `X-DashScope-OssResourceResolve: enable`。**M1 实测：token-plan 端点 getPolicy 返回 404；同 Key 在 dashscope 官方域名返回 401 InvalidApiKey——sk-sp- Key 不适用 dashscope 域名，本套餐 oss 兜底通道不可用，Base64 为唯一输入通道** |
 | 参数 | `parameters.format`、 `parameters.sample_rate` |
-| 响应解析 | 取 `output.text`（兜底 `output.output.sentence.text`）；**无 choices 字段**；usage 字段若存在则记录 |
+| 响应解析 | M1 实测：顶层 `text` 与 `output.text` 冗余并存，优先取 `output.text`（兜底顶层 `text`、`output.sentence.text`）；**无 choices 字段**；usage 实测返回 `{"duration": <秒>}`（无 audio_tokens/seconds）；额外收获：`output.sentence.words[]` 返回**词级时间戳**（begin_time/end_time，毫秒），`speaker_id` 恒为 null |
 | 限制 | 单请求 ≤5 分钟；多语种及方言；支持上下文增强；无说话人分离 |
 
 ### 2.2 集成形态（三选一的结论）
@@ -126,7 +127,7 @@
 | 可维护性 | 高，且为官方 best practice 推荐形态 | 中，多一层协议与进程生命周期 | 高，但无自然语言入口 |
 | 适用场景 | 日常高频、转写→纪要连续动作 | 多 Agent 编排（本期无此需求） | 偶发/批处理 |
 
-**推荐 ① Skill + 脚本**（脚本本体即形态 ③，独立可用）。skill 路径：`~/.kimi-code/skills/meeting-asr/SKILL.md`，含 YAML front matter（name/description/触发词）。
+**推荐 ① Skill + 脚本**（脚本本体即形态 ③，独立可用）。skill 源头路径：`skill/meeting-asr/`（仓库内），安装副本：`~/.kimi-code/skills/meeting-asr/`，含 YAML front matter（name/description/触发词）。
 
 ### 2.3 架构与转写 pipeline
 
@@ -134,35 +135,42 @@
 用户: "把 客户周会-0905.m4a 转成文字"
         │
         ▼
-~/.kimi-code/skills/meeting-asr/SKILL.md   ← 触发词、参数约定、调脚本
+~/.kimi-code/skills/meeting-asr/SKILL.md   ← 触发词、参数约定、调脚本（安装副本；源头在仓库 skill/meeting-asr/）
         │
         ▼
-scripts/meeting_asr.py                    ← 唯一实现体（也独立可用）
+skill/meeting-asr/scripts/meeting_asr.py   ← 唯一实现体（也独立可用）
   ├─ 1. 预处理：ffmpeg 转 16kHz 单声道、低码率 mp3/opus（约 32kbps）
   │      理由：原始 16k wav 5 分钟 ≈ 9.6MB，Base64 后 ≈ 12.8MB 逼近 10MB 上限；
   │      压缩后 5 分钟 ≈ 1.2MB，Base64 后 ≈ 1.6MB，余量充足
   ├─ 2. 切片：按 240s/段（VAD 静默点优先，否则硬切），偏移量入索引
-  ├─ 3. 缓存：sha1(file)+slice_idx → cache/*.json，命中跳过
+  ├─ 3. 缓存：sha1(file)+slice_idx+offset+dur+ctx_hash → cache/*.json，命中跳过
   ├─ 4. 并发调用（默认 3 并发，429 降并发）：
   │      messages = [热词上下文 user 消息] + [assistant 应答] + [input_audio(Base64)]
-  │      Base64 超限/被拒 → 自动降级临时 URL 上传（方式 B）
-  ├─ 5. 合并：按偏移量排序拼接，段落标记 [mm:ss]（切片粒度）
+  │      Base64 超限 → 自动减半重试（M1 实测 oss 方式 B 不可用，已放弃）
+  ├─ 5. 合并：按偏移量排序拼接，段落标记 [mm:ss]（切片粒度），失败切片写占位行
   └─ 6. 输出：<同名>.transcript.md + .transcript.json + 用量报告
 ```
 
-目录约定（仓库 `kimi-code-cli-asr` 根目录）：
+目录约定（仓库 `kimi-code-cli-asr` 根目录，skill 入仓库后为唯一源头）：
 
 ```
 kimi-code-cli-asr/
-├── README.md                     ← 仓库入口与状态
-├── asr-integration-prd-spec.md   ← 本文档
+├── README.md / README_CN.md      ← 仓库入口（英文默认 + 中文）
+├── AGENTS.md                     ← 给 AI agent 的中英双语仓库指引
+├── asr-integration-prd-spec.md / _EN.md   ← 本文档（中英）
 ├── .gitignore                    ← 录音/缓存/转写稿/凭据不入库
 ├── scripts/
-│   └── meeting_asr.py            ← 实现时创建
-├── config/
-│   ├── hotwords.txt              ← 品牌名/媒体平台名/客户名，一行一个
-│   └── context_prompt.txt        ← 领域背景段落（上下文增强用，可选）
-└── cache/                        ← 切片结果缓存（.gitignore）
+│   └── m1_spike.py               ← M1 调试脚本（非交付物）
+├── skill/meeting-asr/            ← skill 唯一源头
+│   ├── SKILL.md                  ← 触发词、参数约定、调用模板
+│   ├── scripts/meeting_asr.py    ← 实现体（也独立可用）
+│   ├── scripts/requirements.txt
+│   ├── assets/hotwords.txt       ← 品牌名/媒体平台名/客户名，一行一个
+│   ├── assets/context_prompt.txt ← 领域背景段落（上下文增强用，可选）
+│   ├── references/api-notes.md   ← 端点契约与排障笔记
+│   ├── evals/evals.json          ← skill 评估集
+│   └── cache/                    ← 切片结果缓存（.gitignore）
+└── testdata/                     ← 测试录音（.gitignore）
 ```
 
 ### 2.4 接口与数据结构
@@ -170,11 +178,11 @@ kimi-code-cli-asr/
 **CLI 接口**
 
 ```
-PYTHONUTF8=1 python scripts/meeting_asr.py <audio_path>
+PYTHONUTF8=1 python skill/meeting-asr/scripts/meeting_asr.py <audio_path>
     [--lang zh] [--slice-sec 240] [--concurrency 3]
-    [--hotwords config/hotwords.txt]
-    [--context config/context_prompt.txt]
-    [--upload base64|oss]      # 默认 base64，失败自动降级 oss
+    [--hotwords <热词表>]            # 默认 skill/meeting-asr/assets/hotwords.txt
+    [--context <领域背景>]           # 默认 skill/meeting-asr/assets/context_prompt.txt
+    [--upload base64|oss]      # 默认 base64；oss 已实测不可用（保留接口）
     [--consent]                # 首次使用必须显式确认上云
 ```
 
@@ -227,7 +235,7 @@ PYTHONUTF8=1 python scripts/meeting_asr.py <audio_path>
 | 429 限流 | 并发降至 1，遵循 Retry-After |
 | 5xx | 指数退避重试；连续失败保留切片状态，下次重跑补齐 |
 | 单切片 >5min 或 Base64 编码后 >10MB | 自动缩短该切片（减半）后重试 |
-| Base64 被端点拒绝 | 自动降级输入方式 B（临时 URL 上传），并提示 48h 留存 |
+| Base64 被端点拒绝 | ~~自动降级输入方式 B~~ M1 实测方式 B 通道不可用（getPolicy 404）→ 改为：报错并提示缩短切片/检查套餐权限，不做自动降级 |
 | oss:// URL 调用失败 | 检查 `X-DashScope-OssResourceResolve: enable` header 与上传时 model 参数一致性 |
 | 响应无 `output.text` | 打印原始响应并标记切片失败（响应结构以 M1 实测为准） |
 | 音频格式不支持 | ffmpeg 统一转码；ffmpeg 缺失则报错并给出安装提示 |
@@ -251,7 +259,60 @@ PYTHONUTF8=1 python scripts/meeting_asr.py <audio_path>
 
 ### 2.8 开放问题
 
-1. **M1 spike 五项确认**（见 2.7），官方文档示例均基于 `dashscope.aliyuncs.com`，token-plan 端点行为需实测
+1. ~~**M1 spike 五项确认**~~ **已于 2026-09-04 实测完成**（30 秒中文会议录音，token-plan 端点）：
+   - ① 模型可调通：HTTP 200 + 正确中文转写 ✅
+   - ② Base64 Data URL（`data:audio/mpeg;base64,...`）被接受 ✅（30s/16kHz/32kbps mp3 ≈ 81KB，Data URL ≈ 108KB）
+   - ③ 响应结构：顶层 `text`/`sentence`/`request_id` 与 `output.*` 冗余并存，无 choices；`output.sentence.words[]` 带词级时间戳（毫秒），段落级 `[mm:ss]` 标记可用词级时间戳实现（优于切片粒度）
+   - ④ usage 返回 `{"duration": 20}`（秒，无 audio_tokens/seconds 字段），用量报告以此为准
+   - ⑤ getPolicy 在 token-plan 端点 **404 不可用**；同 Key 在 dashscope 域名 401 InvalidApiKey → oss 兜底通道对本套餐不可行，输入方式固定为 Base64
 2. 套餐是否可升级/加购 `qwen-audio-3.0-asr-flash-filetrans`（12h 长音频 + 说话人分离）——若可，架构不变、改走异步转写接口即可，US-4 自动恢复
-3. Credits 与转写时长/token 的折算率（影响用量报告金额估算），以平台实时价为准
+3. Credits 与转写时长/token 的折算率（影响用量报告金额估算），以平台实时价为准；M1 实测 usage 按 `duration`（秒）计量
 4. 与飞书妙记（用户已有 lark-minutes skill）的分工：妙记内录音走妙记，本地文件走本方案 —— 写入 SKILL.md 触发词说明
+
+---
+
+### 2.9 技术栈评审结论（2026-09-04）
+
+结论：**维持现有技术栈**，无更优替代。逐项评估：
+
+| 栈组件 | 现有选择 | 评审结论 |
+|---|---|---|
+| 语言/运行时 | Python 3.10+ | 维持。环境已就绪，全局编码规范（PYTHONUTF8 等）围绕 Python；换 Node/Go 零收益 |
+| HTTP 调用层 | `requests` 裸调 REST | 维持。M1 五项未知全是裸端点行为，裸 HTTP 可完整打印原始响应、精确控制 `X-DashScope-*` header，调试最透明；OpenAI SDK 不可用（2.1 已实测）；`httpx`/asyncio 对 3 路并发无必要 |
+| 音频预处理 | ffmpeg CLI（subprocess） | 维持。pydub / ffmpeg-python 均为 ffmpeg 封装（多一层依赖无收益），soundfile 不支持 m4a；ffmpeg 是 Windows 标准方案 |
+| 并发模型 | ThreadPoolExecutor（并发 3） | 维持。I/O 密集、并发度仅 3，线程池足够，async 徒增复杂度 |
+| 集成形态 | Skill + 独立脚本 | 维持。见 2.2 三选一论证；MCP 对单 Agent 场景多一层协议与进程生命周期 |
+| 模型/端点 | `qwen-audio-3.0-asr-flash` @ token-plan | 无选择空间。套餐内唯一 ASR 模型；本地 Whisper/FunASR 与"零套餐外费用"需求冲突（1.4 Won't）；filetrans 在套餐外 |
+| 缓存/状态 | 切片级 JSON 文件 | 维持。切片量级下 SQLite 属过度设计，JSON 可直接肉眼检查断点状态 |
+
+备查（不采用）：官方 `dashscope` Python SDK 经核实支持 `dashscope.base_http_api_url` 自定义端点与自定义 header（[阿里云文档](https://help.aliyun.com/zh/model-studio/qwen-api-via-dashscope)），指向 token-plan 端点理论上可行；但会给 M1 引入未验证的第三方依赖变量且隐藏原始响应细节，故 spike 阶段不用。若 requests 路线在 M1 受阻，可回退重新评估此路线。
+
+配套小改进（已实施）：M2 第 0 步创建 `requirements.txt`（`requests>=2.31`）锁定依赖；重试逻辑手写（3 次指数退避约 10 行），不引入 tenacity。
+
+---
+
+## Part 3 · 实施记录（2026-09-04 ~ 2026-09-05）
+
+> 原 `asr-implementation-plan.md` 的里程碑结论与质量记录并入本节，该文件已撤销。
+
+### 3.1 里程碑完成情况
+
+| 里程碑 | 内容 | 结果 |
+|---|---|---|
+| 0.x 准备 | Key 配置（setx 用户级）、ffmpeg 9.0.1（winget）、Python 3.13 + requests 2.34、目录骨架 | ✅ |
+| M1 spike | token-plan 端点五项假设实测（`scripts/m1_spike.py`） | ✅ 结论见 2.8-1：端点可通、Base64 可用、usage 为 `duration` 秒数、附词级时间戳、oss 兜底通道不可用（404/401 双重确认） |
+| M2 脚本 | `skill/meeting-asr/scripts/meeting_asr.py`：预处理/切片/缓存/并发/重试/合并/用量报告 | ✅ 21 分钟真实录音 41 秒跑通（6 切片并发 3） |
+| M3 skill | `skill/meeting-asr/`（仓库内唯一源头；SKILL.md + scripts + assets + references，自包含可分发） | ✅ US-1/US-2/US-3/US-5 实测通过 |
+| M4 增强 | 说话人推测标注、批量目录、srt 导出、VAD 切片 | 未启动，按需 |
+
+### 3.2 质量验证记录
+
+- **M2 独立验证**（未参与编写的 subagent，证伪导向）：首轮"有条件通过"，发现 5 项缺陷（高危 1：缓存键不含 slice-sec 导致改粒度后时间轴错乱；另含损坏缓存崩溃、401 不终止等），修复后复验**通过**（复验 0 次真实 API 调用）
+- **skill 评估**（skill-creator 流程）：3 个测试 prompt × 新旧版并行跑批，14 条断言全部通过；跑批中发现并修复 2 个真实问题（转写稿混入 `<|im_end|>` 残留 token → 合并阶段清洗；并发进程重复计费 → `.lock` 进程锁）
+- **code review**（独立 reviewer）：13 项 findings 全部修复并复验"可发布"——含 2 中危（转码半成品毒化缓存 → tmp+replace；缓存锚定 CWD 导致换目录全量重计费 → 锚定脚本上级目录）+ 热词哈希入缓存键、stale lock PID 探活接管、Base64 超限自动减半等
+
+### 3.3 运维要点
+
+- **单一源头**：`skill/meeting-asr/` 是 skill 唯一源头（脚本/文档/模板/评估集全在版本控制内）。修改后本机重装：拷贝整个 `skill/meeting-asr/` 覆盖 `~/.kimi-code/skills/meeting-asr/`（保留其 `cache/`）；分发时用 skill-creator 的 `package_skill.py` 打包（`meeting-asr.skill` / `.zip`）
+- **缓存即金钱**：缓存命中条件 = idx + offset + dur + 上下文哈希；修改热词/背景会使该文件缓存整体失效并重计费，删 `cache/<sha1>/` 前想清楚
+- **ffmpeg PATH**：winget 安装后写入用户 PATH，但安装前已打开的终端/进程需手动带 PATH 或重开

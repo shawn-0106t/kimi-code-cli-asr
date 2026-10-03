@@ -1,0 +1,22 @@
+# Python 交付脚本语法检查：只做 py_compile，零依赖、零计费。
+# 本仓库 CI 红线：不安装真实凭据、不触发任何 ASR API 调用（缓存即金钱）。
+name: python-check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  py-compile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Byte-compile delivery scripts
+        run: python -m py_compile scripts/m1_spike.py skill/meeting-asr/scripts/meeting_asr.py

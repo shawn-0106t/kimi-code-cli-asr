@@ -1,0 +1,26 @@
+# 敏感信息扫描（gitleaks）：守住本仓库红线——QWEN_TOKEN_PLAN_KEY 等任何凭据不入库。
+# 本地有 pre-commit 兜底，这里是远端最后一道闸（换机器/绕过 hook 时仍生效）。
+name: gitleaks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read  # gitleaks-action 在 PR 事件下需读 commits 端点，缺了会 403
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 增量扫描的 base 对象可达性需要全量历史；push 只扫增量，全量扫描走手动触发
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false

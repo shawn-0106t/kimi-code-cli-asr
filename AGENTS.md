@@ -18,6 +18,7 @@ skill/meeting-asr/       skill 唯一源头（SKILL.md + scripts/meeting_asr.py 
 scripts/m1_spike.py      M1 调试脚本（非交付物，不要当作质量标准）
 requirements.txt         requests>=2.31（与 skill/meeting-asr/scripts/requirements.txt 相同）
 testdata/                录音（.gitignore，永不提交）；切片缓存位于 skill/meeting-asr/cache/
+.github/workflows/       CI 自动化（gitleaks 敏感信息扫描 + python-check 语法检查；不接触真实 key、不产生 API 计费）
 ```
 
 热词表在 `skill/meeting-asr/assets/hotwords.txt`（脚本默认读取，改它会使缓存失效重计费）。
@@ -55,6 +56,7 @@ skill/meeting-asr/       Single source of truth for the skill (SKILL.md + script
 scripts/m1_spike.py      M1 debug script (not a deliverable; not a quality reference)
 requirements.txt         requests>=2.31 (same as skill/meeting-asr/scripts/requirements.txt)
 testdata/                Audio files (gitignored, never commit); slice cache lives in skill/meeting-asr/cache/
+.github/workflows/       CI automation (gitleaks secret scan + python-check compile check; no real keys, no API billing)
 ```
 
 Hotwords live in `skill/meeting-asr/assets/hotwords.txt` (read by default; editing it invalidates cache and re-bills).
